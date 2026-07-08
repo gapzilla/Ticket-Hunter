@@ -1,0 +1,47 @@
+name: Tixxa Resale Ticket Monitor
+
+on:
+  schedule:
+    # Run every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows manual trigger from the GitHub web interface
+
+jobs:
+  check-tickets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Run Resale Monitor
+        env:
+          LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_UID: ${{ secrets.LINE_USER_ID }}
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          ARGS=""
+          if [ ! -z "$LINE_TOKEN" ] && [ ! -z "$LINE_UID" ]; then
+            ARGS="$ARGS --line-token $LINE_TOKEN --line-uid $LINE_UID"
+          fi
+          if [ ! -z "$TG_TOKEN" ] && [ ! -z "$TG_CHAT" ]; then
+            ARGS="$ARGS --telegram-token $TG_TOKEN --telegram-chat $TG_CHAT"
+          fi
+          
+          python3 scripts/check_tickets_server.py \
+            --url "https://tixxa.co/th/rock-day-gfest-marathon-concert-2026-1387" \
+            $ARGS \
+            --qty 2 \
+            --state "scripts/notified_tickets.json"
+
+      - name: Commit and push if state changed
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add scripts/notified_tickets.json || true
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update resale notified state [skip ci]" && git push)
