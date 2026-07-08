@@ -157,22 +157,53 @@ def main():
     clean_path = re.sub(r'^/(th|en|vi|my|zh|ja)/', '/', raw_path)
     concert_path = clean_path.rstrip('/') + '/'
     
-    print(f"[{datetime.now()}] Fetching resale page: {args.url}...")
-    content = fetch_page_content(args.url)
-    if not content:
-        return
-
-    parser_obj = TicketHTMLParser(concert_path)
-    parser_obj.feed(content)
-
-    matching_tickets = []
+    all_tickets = []
     current_ids = []
+    all_seen_ids = set()
+    page = 1
+    
+    while True:
+        # Append pagination query parameter
+        page_url = f"{args.url}?page={page}"
+        print(f"[{datetime.now()}] Fetching resale page: {page_url}...")
+        content = fetch_page_content(page_url)
+        if not content:
+            print(f"[{datetime.now()}] Failed to fetch page {page}. Ending pagination.")
+            break
+            
+        parser_obj = TicketHTMLParser(concert_path)
+        parser_obj.feed(content)
+        
+        if not parser_obj.tickets:
+            print(f"[{datetime.now()}] No ticket links found on page {page}. Ending pagination.")
+            break
+            
+        # Safeguard: Check if all tickets on this page have already been seen
+        has_new_ticket = False
+        for t in parser_obj.tickets:
+            link = t['link']
+            ticket_id_match = re.search(r'/(\d+)$', link)
+            if ticket_id_match:
+                ticket_id = ticket_id_match.group(1)
+                if ticket_id not in all_seen_ids:
+                    all_seen_ids.add(ticket_id)
+                    has_new_ticket = True
+                    
+        if not has_new_ticket:
+            print(f"[{datetime.now()}] All tickets on page {page} were already seen. Ending pagination to prevent loops.")
+            break
+            
+        print(f"[{datetime.now()}] Page {page}: Found {len(parser_obj.tickets)} listings.")
+        all_tickets.extend(parser_obj.tickets)
+        page += 1
+        
+    matching_tickets = []
 
-    for t in parser_obj.tickets:
+    for t in all_tickets:
         link = t['link']
         text = t['text']
         
-        # Extract unique ticket listing ID from URL (e.g. /rock-day-gfest-marathon-concert-2026-1387/40437 -> 40437)
+        # Extract unique ticket listing ID from URL
         ticket_id_match = re.search(r'/(\d+)$', link)
         if not ticket_id_match:
             continue
@@ -204,7 +235,7 @@ def main():
                 'link': f"https://tixxa.co{link}"
             })
 
-    print(f"[{datetime.now()}] Found {len(parser_obj.tickets)} total listings. {len(matching_tickets)} matching target quantity (>= {args.qty}).")
+    print(f"[{datetime.now()}] Scanned all pages. Found {len(all_tickets)} total listings. {len(matching_tickets)} matching target quantity (>= {args.qty}).")
 
     if not matching_tickets:
         return
@@ -212,6 +243,7 @@ def main():
     notified_ids = load_notified_state(state_file)
     new_notified_ids = list(notified_ids)
 
+    # Filter to only new matches
     tickets_to_alert = [t for t in matching_tickets if t['id'] not in notified_ids]
 
     if not tickets_to_alert:
