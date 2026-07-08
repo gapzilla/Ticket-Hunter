@@ -3,7 +3,7 @@ name: Tixxa Resale Ticket Monitor
 on:
   schedule:
     # Run every 10 minutes
-    - cron: '*/10 * * * *'
+    - cron: '0 */2 * * *' (runs at the start of every 2nd hour).
   workflow_dispatch: # Allows manual trigger from the GitHub web interface
 
 jobs:
