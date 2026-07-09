@@ -237,9 +237,6 @@ def main():
 
     print(f"[{datetime.now()}] Scanned all pages. Found {len(all_tickets)} total listings. {len(matching_tickets)} matching target quantity (>= {args.qty}).")
 
-    if not matching_tickets:
-        return
-
     notified_ids = load_notified_state(state_file)
     new_notified_ids = list(notified_ids)
 
@@ -247,7 +244,12 @@ def main():
     tickets_to_alert = [t for t in matching_tickets if t['id'] not in notified_ids]
 
     if not tickets_to_alert:
-        print(f"[{datetime.now()}] All matches were already notified. Skipping notifications.")
+        print(f"[{datetime.now()}] No new matching tickets found. Sending status heartbeat...")
+        heartbeat_body = f"[Status Update] Checked all pages ({len(all_tickets)} total listings). No new matching tickets found."
+        if has_line:
+            send_line_push_notification(args.line_token, args.line_uid, heartbeat_body)
+        if has_telegram:
+            send_telegram_notification(args.telegram_token, args.telegram_chat, heartbeat_body)
         return
 
     # Build alert message
