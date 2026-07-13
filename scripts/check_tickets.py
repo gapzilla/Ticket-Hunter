@@ -3,6 +3,7 @@ import os
 import json
 import argparse
 import urllib.request
+import subprocess
 import gzip
 from html.parser import HTMLParser
 from datetime import datetime
@@ -60,60 +61,44 @@ def fetch_page_content(url):
         print(f"[{datetime.now()}] Error fetching page: {e}")
         return None
 
-def send_line_push_notification(channel_access_token, user_id, message):
-    url = "https://api.line.me/v2/bot/message/push"
-    payload = {
-        "to": user_id,
-        "messages": [
-            {
-                "type": "text",
-                "text": message.strip()
-            }
-        ]
-    }
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={
-            "Authorization": f"Bearer {channel_access_token}",
-            "Content-Type": "application/json"
-        }
-    )
+def send_email_via_applescript(to_address, subject, body):
+    # Escape quotes and backslashes for AppleScript
+    escaped_subject = subject.replace('\\', '\\\\').replace('"', '\\"')
+    escaped_body = body.replace('\\', '\\\\').replace('"', '\\"')
+    
+    applescript = f'''
+    tell application "Mail"
+        set newMessage to make new outgoing message with properties {{subject:"{escaped_subject}", content:"{escaped_body}", visible:false}}
+        tell newMessage
+            make new to recipient with properties {{address:"{to_address}"}}
+            send
+        end tell
+    end tell
+    '''
     try:
-        with urllib.request.urlopen(req, timeout=15) as response:
-            res_data = json.loads(response.read().decode('utf-8'))
-            print(f"[{datetime.now()}] LINE Push Notification sent successfully: {res_data}")
-            return True
-    except Exception as e:
-        print(f"[{datetime.now()}] Error sending LINE Push Notification: {e}")
+        res = subprocess.run(['osascript', '-e', applescript], check=True, capture_output=True, text=True)
+        print(f"[{datetime.now()}] Email sent successfully via Mail.app to {to_address}.")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"[{datetime.now()}] Error sending email via AppleScript: {e.stderr.strip()}")
         return False
 
-def send_telegram_notification(token, chat_id, message):
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": message.strip()
-    }
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={
-            "Content-Type": "application/json"
-        }
-    )
+def send_imessage_via_applescript(target, body):
+    escaped_body = body.replace('\\', '\\\\').replace('"', '\\"')
+    
+    applescript = f'''
+    tell application "Messages"
+        set targetAccount to 1st account whose service type is iMessage
+        set targetParticipant to participant "{target}" of targetAccount
+        send "{escaped_body}" to targetParticipant
+    end tell
+    '''
     try:
-        with urllib.request.urlopen(req, timeout=15) as response:
-            res_data = json.loads(response.read().decode('utf-8'))
-            if res_data.get("ok"):
-                print(f"[{datetime.now()}] Telegram message sent successfully.")
-                return True
-            else:
-                print(f"[{datetime.now()}] Telegram returned error: {res_data}")
-                return False
-    except Exception as e:
-        print(f"[{datetime.now()}] Error sending Telegram message: {e}")
+        subprocess.run(['osascript', '-e', applescript], check=True, capture_output=True, text=True)
+        print(f"[{datetime.now()}] iMessage sent successfully to {target}.")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"[{datetime.now()}] Error sending iMessage: {e.stderr.strip()}")
         return False
 
 def load_notified_state(state_file):
@@ -129,28 +114,18 @@ def save_notified_state(state_file, notified_list):
     try:
         with open(state_file, 'w', encoding='utf-8') as f:
             json.dump(notified_list, f, indent=2, ensure_ascii=False)
-        print(f"[{datetime.now()}] Saved state: {notified_list}")
     except Exception as e:
         print(f"[{datetime.now()}] Error saving state: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Tixxa Resale Ticket Monitor (Server Version)")
+    parser = argparse.ArgumentParser(description="Tixxa Resale Ticket Monitor")
     parser.add_argument("--url", default="https://tixxa.co/th/rock-day-gfest-marathon-concert-2026-1387", help="Tixxa concert page URL")
-    parser.add_argument("--line-token", help="LINE Messaging API Channel Access Token")
-    parser.add_argument("--line-uid", help="LINE Messaging API User ID")
-    parser.add_argument("--telegram-token", help="Telegram Bot Token")
-    parser.add_argument("--telegram-chat", help="Telegram Chat ID")
+    parser.add_argument("--email", default="gapzilla@gmail.com", help="Target email for notification")
+    parser.add_argument("--imessage", default="gapzilla@gmail.com", help="Target phone number or Apple ID for iMessage")
     parser.add_argument("--qty", type=int, default=2, help="Minimum ticket quantity required")
     parser.add_argument("--state", help="State JSON file path for tracking notified tickets")
     args = parser.parse_args()
     
-    # Validation: Must provide either LINE config or Telegram config
-    has_line = args.line_token and args.line_uid
-    has_telegram = args.telegram_token and args.telegram_chat
-    if not (has_line or has_telegram):
-        print("Error: You must configure either LINE Messaging API (--line-token AND --line-uid) or Telegram (--telegram-token AND --telegram-chat).")
-        return
-        
     script_dir = os.path.dirname(os.path.abspath(__file__))
     state_file = args.state if args.state else os.path.join(script_dir, "notified_tickets.json")
     
@@ -252,29 +227,61 @@ def main():
 
     if not tickets_to_alert:
         print(f"[{datetime.now()}] No new matching tickets found. Sending status heartbeat...")
-        heartbeat_body = f"[Status Update] Checked all pages ({len(all_tickets)} total listings). No new matching tickets found."
-        if has_line:
-            send_line_push_notification(args.line_token, args.line_uid, heartbeat_body)
-        if has_telegram:
-            send_telegram_notification(args.telegram_token, args.telegram_chat, heartbeat_body)
+        subject = "[Status Update] Tixxa Check Completed"
+        body = (
+            "Dear Gap,\n\n"
+            f"Our ticket monitor successfully ran and checked all pages ({len(all_tickets)} total listings found).\n\n"
+            f"There are no new resale ticket listings matching your criteria (>= {args.qty} tickets).\n\n"
+            "Kind regards,\n"
+            "Kisadanu Unthawapee (Gap)\n"
+            "Production Director"
+        )
+        
+        # 1. Send Email
+        send_email_via_applescript(args.email, subject, body)
+        
+        # 2. Send iMessage (if target specified)
+        if args.imessage:
+            imessage_body = f"[Status Update] Checked all pages ({len(all_tickets)} total listings). No new matching tickets found."
+            send_imessage_via_applescript(args.imessage, imessage_body)
         return
 
-    # Build alert message
-    alert_body = f"[Ticket Alert] Found new listings on Tixxa with >= {args.qty} tickets!\n"
+    # Build and send email alert
+    subject = f"[Ticket Alert] {args.qty}+ Resell Tickets Available for Rock Day GFEST"
+    
+    body_lines = [
+        "Dear Gap,",
+        "",
+        "We have detected new resale ticket listings on Tixxa with target ticket count:",
+        ""
+    ]
+    
     for t in tickets_to_alert:
-        alert_body += f"\n- {t['details']} ({t['qty']} tickets, {t['price']} THB/ticket)\n  Link: {t['link']}\n"
+        body_lines.append(f"- Detail: {t['details']}")
+        body_lines.append(f"  Quantity: {t['qty']} tickets")
+        body_lines.append(f"  Price: {t['price']} THB / ticket")
+        body_lines.append(f"  Link: {t['link']}")
+        body_lines.append("")
         new_notified_ids.append(t['id'])
 
-    # Send notifications
-    line_success = False
-    telegram_success = False
+    body_lines.append("Kind regards,")
+    body_lines.append("Kisadanu Unthawapee (Gap)")
+    body_lines.append("Production Director")
     
-    if has_line:
-        line_success = send_line_push_notification(args.line_token, args.line_uid, alert_body)
-    if has_telegram:
-        telegram_success = send_telegram_notification(args.telegram_token, args.telegram_chat, alert_body)
+    email_body = "\n".join(body_lines)
+    
+    # 1. Send Email
+    email_success = send_email_via_applescript(args.email, subject, email_body)
+    
+    # 2. Send iMessage (if target specified)
+    imessage_success = False
+    if args.imessage:
+        imessage_body = f"[Ticket Alert] Found new listings on Tixxa with >= {args.qty} tickets!\n"
+        for t in tickets_to_alert:
+            imessage_body += f"\n- {t['details']} ({t['qty']} tickets, {t['price']} THB/ticket)\n  Link: {t['link']}\n"
+        imessage_success = send_imessage_via_applescript(args.imessage, imessage_body)
         
-    if line_success or telegram_success:
+    if email_success or imessage_success:
         active_notified_ids = [nid for nid in new_notified_ids if nid in current_ids or nid in [t['id'] for t in tickets_to_alert]]
         save_notified_state(state_file, active_notified_ids)
 
