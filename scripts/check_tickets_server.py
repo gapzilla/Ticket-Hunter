@@ -134,40 +134,8 @@ def save_notified_state(state_file, notified_list):
         print(f"[{datetime.now()}] Error saving state: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Tixxa Resale Ticket Monitor (Server Version)")
-    parser.add_argument("--url", default="https://tixxa.co/th/rock-day-gfest-marathon-concert-2026-1387", help="Tixxa concert page URL")
-    parser.add_argument("--line-token", help="LINE Messaging API Channel Access Token")
-    parser.add_argument("--line-uid", help="LINE Messaging API User ID")
-    parser.add_argument("--telegram-token", help="Telegram Bot Token")
-    parser.add_argument("--telegram-chat", help="Telegram Chat ID")
-    parser.add_argument("--qty", type=int, default=2, help="Minimum ticket quantity required")
-    parser.add_argument("--state", help="State JSON file path for tracking notified tickets")
-    args = parser.parse_args()
-    
-    # Validation: Must provide either LINE config or Telegram config
-    has_line = args.line_token and args.line_uid
-    has_telegram = args.telegram_token and args.telegram_chat
-    if not (has_line or has_telegram):
-        print("Error: You must configure either LINE Messaging API (--line-token AND --line-uid) or Telegram (--telegram-token AND --telegram-chat).")
-        return
-        
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    state_file = args.state if args.state else os.path.join(script_dir, "notified_tickets.json")
-    
-    # Extract path pattern from URL (e.g. /rock-day-gfest-marathon-concert-2026-1387)
-    match = re.search(r'https?://[^/]+(/[^?#]+)', args.url)
-    if not match:
-        print("Error: Invalid Tixxa URL format.")
-        return
-    raw_path = match.group(1)
-    # Remove language prefix (e.g., /th/ or /en/) if present
-    clean_path = re.sub(r'^/(th|en|vi|my|zh|ja)/', '/', raw_path)
-    concert_path = clean_path.rstrip('/') + '/'
-    
-    all_tickets = []
-    current_ids = []
-    all_seen_ids = set()
-    page = 1
+    print("Concert has passed (August 30, 2026). Monitoring is stopped.")
+    return
     
     while True:
         # Append pagination query parameter
