@@ -118,8 +118,35 @@ def save_notified_state(state_file, notified_list):
         print(f"[{datetime.now()}] Error saving state: {e}")
 
 def main():
-    print("Concert has passed (August 30, 2026). Monitoring is stopped.")
-    return
+    parser = argparse.ArgumentParser(description="Tixxa Resale Ticket Monitor")
+    parser.add_argument("--url", default="https://tixxa.co/th/boydko-christmas-concert-1520", help="Tixxa concert page URL")
+    parser.add_argument("--email", default="gapzilla@gmail.com", help="Target email for notification")
+    parser.add_argument("--imessage", default="gapzilla@gmail.com", help="Target phone number or Apple ID for iMessage")
+    parser.add_argument("--qty", type=int, default=2, help="Minimum ticket quantity required")
+    parser.add_argument("--state", help="State JSON file path for tracking notified tickets")
+    args = parser.parse_args()
+    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    state_file = args.state if args.state else os.path.join(script_dir, "notified_tickets.json")
+    
+    # If legacy rock day URL is passed, redirect to boydko christmas concert
+    if "rock-day-gfest-marathon-concert-2026-1387" in args.url:
+        args.url = "https://tixxa.co/th/boydko-christmas-concert-1520"
+
+    # Extract path pattern from URL (e.g. /boydko-christmas-concert-1520)
+    match = re.search(r'https?://[^/]+(/[^?#]+)', args.url)
+    if not match:
+        print("Error: Invalid Tixxa URL format.")
+        return
+    raw_path = match.group(1)
+    # Remove language prefix (e.g., /th/ or /en/) if present
+    clean_path = re.sub(r'^/(th|en|vi|my|zh|ja)/', '/', raw_path)
+    concert_path = clean_path.rstrip('/') + '/'
+    
+    all_tickets = []
+    current_ids = []
+    all_seen_ids = set()
+    page = 1
     
     while True:
         # Append pagination query parameter
@@ -224,7 +251,7 @@ def main():
         return
 
     # Build and send email alert
-    subject = f"[Ticket Alert] {args.qty}+ Resell Tickets Available for Rock Day GFEST"
+    subject = f"[Ticket Alert] {args.qty}+ Resell Tickets Available for Boyd-Ko Christmas Concert"
     
     body_lines = [
         "Dear Gap,",
